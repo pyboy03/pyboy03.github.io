@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Permainan Tetris</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #000;
+            margin: 0;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        canvas {
+            background-color: #111;
+            display: block;
+            border: 4px solid white;
+            box-shadow: 0px 0px 20px white;
+            z-index: 1;
+        }
+
+        #playScreen,
+        #gameOverScreen {
+            color: white;
+            text-align: center;
+            z-index: 1;
+        }
+
+        #gameOverScreen {
+            display: none;
+        }
+
+        #playButton,
+        #retryButton {
+            font-size: 24px;
+            padding: 10px 20px;
+            background-color: #32cd32;
+            border: none;
+            color: white;
+            cursor: pointer;
+            z-index: 1;
+        }
+
+        .controls {
+            margin-top: 20px;
+            text-align: center;
+            z-index: 1;
+        }
+
+        .control-button {
+            padding: 10px 20px;
+            font-size: 20px;
+            margin: 5px;
+            background-color: #1e90ff;
+            border: none;
+            color: white;
+            cursor: pointer;
+            z-index: 1;
+        }
+
+        /* Efek Meteor */
+        .meteor {
+            position: absolute;
+            width: 3px;
+            height: 50px;
+            background: linear-gradient(to bottom, white, transparent);
+            opacity: 0.8;
+            transform: rotate(0deg);
+            /* Mengubah arah vertikal */
+            animation: fall linear infinite;
+        }
+
+        @keyframes fall {
+            0% {
+                top: -10%;
+                left: var(--left);
+                opacity: 1;
+            }
+
+            100% {
+                top: 110%;
+                left: var(--left);
+                /* Tidak berpindah ke samping */
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="playScreen">
+        <h1 style="font-size: 48px;">Selamat Datang di Tetris</h1>
+        <button id="playButton">Mulai Bermain</button>
+    </div>
+
+    <div id="gameOverScreen">
+        <h1>Permainan Selesai!</h1>
+        <button id="retryButton">Coba Lagi</button>
+    </div>
+    <div class="meteor"></div>
+    <div class="meteor"></div>
+    <div class="meteor"></div>
+    <div class="meteor"></div>
+    <div class="meteor"></div>
+    <div class="meteor"></div>
+    <div class="meteor"></div>
+    <div class="meteor"></div>
+
+    <canvas id="tetris" width="360" height="600" style="display:none;"></canvas>
+
+    <div class="controls" style="display: none;">
+        <button id="left" class="control-button fa-solid fa-arrow-left"></button>
+        <button id="right" class="control-button fa-solid fa-arrow-right"></button>
+        <button id="rotate" class="control-button fa-solid fa-arrows-rotate"></button>
+        <button id="down" class="control-button fa-solid fa-arrow-down"></button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('tetris');
+        const context = canvas.getContext('2d');
+        context.scale(30, 30);
+
+        const playButton = document.getElementById('playButton');
+        const retryButton = document.getElementById('retryButton');
+        const playScreen = document.getElementById('playScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const controls = document.querySelector('.controls');
+
+        const colors = [null, '#FF0D72', '#0DC2FF', '#0DFF72', '#F538FF', '#FF8E0D', '#FFE138', '#3877FF'];
+
+
+        function createMeteors() {
+            for (let i = 0; i < 20; i++) { // Tambah jumlah meteor lebih banyak
+                let meteor = document.createElement("div");
+                meteor.classList.add("meteor");
+
+                // Posisi acak untuk meteor
+                meteor.style.setProperty("--left", Math.random() * 100 + "%");
+
+                // Memperlambat kecepatan meteor (antara 4 - 8 detik)
+                meteor.style.animationDuration = Math.random() * 4 + 4 + "s";
+
+                document.body.appendChild(meteor);
+            }
+        }
+
+        createMeteors();
+
+        function createMatrix(w, h) {
+            return Array.from({ length: h }, () => new Array(w).fill(0));
+        }
+
+        function createPiece(type) {
+            const pieces = {
+                'T': [[0, 0, 0], [1, 1, 1], [0, 1, 0]],
+                'O': [[2, 2], [2, 2]],
+                'L': [[0, 3, 0], [0, 3, 0], [0, 3, 3]],
+                'J': [[0, 4, 0], [0, 4, 0], [4, 4, 0]],
+                'I': [[0, 5, 0, 0], [0, 5, 0, 0], [0, 5, 0, 0], [0, 5, 0, 0]],
+                'S': [[0, 6, 6], [6, 6, 0], [0, 0, 0]],
+                'Z': [[7, 7, 0], [0, 7, 7], [0, 0, 0]],
+            };
+            return pieces[type];
+        }
+
+        function drawMatrix(matrix, offset) {
+            matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        context.fillStyle = colors[value];
+                        context.fillRect(x + offset.x, y + offset.y, 1, 1);
+                    }
+                });
+            });
+        }
+
+        function draw() {
+            context.fillStyle = '#000';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawGrid(); // Panggil fungsi untuk menggambar grid
+
+            drawMatrix(arena, { x: 0, y: 0 });
+            drawMatrix(player.matrix, player.pos);
+        }
+
+        function drawGrid() {
+            context.strokeStyle = '#444'; // Warna garis grid
+            context.lineWidth = 0.05; // Ketebalan garis grid
+
+            for (let x = 0; x < canvas.width / 20; x++) {
+                context.beginPath();
+                context.moveTo(x, 0);
+                context.lineTo(x, canvas.height / 20);
+                context.stroke();
+            }
+
+            for (let y = 0; y < canvas.height / 20; y++) {
+                context.beginPath();
+                context.moveTo(0, y);
+                context.lineTo(canvas.width / 20, y);
+                context.stroke();
+            }
+        }
+
+
+        function merge(arena, player) {
+            player.matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        arena[y + player.pos.y][x + player.pos.x] = value;
+                    }
+                });
+            });
+        }
+
+        function playerRotate() {
+            const prevMatrix = player.matrix;
+            const rotated = player.matrix.map((_, i) => player.matrix.map(row => row[i])).reverse();
+            player.matrix = rotated;
+            if (collide(arena, player)) {
+                player.matrix = prevMatrix;
+            }
+        }
+
+        function playerReset() {
+            const pieces = 'TJLOSZI';
+            player.matrix = createPiece(pieces[Math.floor(Math.random() * pieces.length)]);
+            player.pos.y = 0;
+            player.pos.x = Math.floor(arena[0].length / 2) - Math.floor(player.matrix[0].length / 2);
+            if (collide(arena, player)) {
+                gameOver();
+            }
+        }
+
+        function playerMove(dir) {
+            player.pos.x += dir;
+            if (collide(arena, player)) {
+                player.pos.x -= dir;
+            }
+        }
+
+        function playerDrop() {
+            player.pos.y++;
+            if (collide(arena, player)) {
+                player.pos.y--;
+                merge(arena, player);
+                playerReset();
+            }
+            dropCounter = 0;
+        }
+
+        function collide(arena, player) {
+            return player.matrix.some((row, y) =>
+                row.some((value, x) => value !== 0 && (arena[y + player.pos.y]?.[x + player.pos.x] !== 0))
+            );
+        }
+
+        function update(time = 0) {
+            const deltaTime = time - lastTime;
+            dropCounter += deltaTime;
+            if (dropCounter > 1000) {
+                playerDrop();
+            }
+            lastTime = time;
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function gameOver() {
+            gameOverScreen.style.display = 'block';
+            canvas.style.display = 'none';
+            controls.style.display = 'none';
+        }
+
+        playButton.addEventListener('click', () => {
+            playScreen.style.display = 'none';
+            canvas.style.display = 'block';
+            controls.style.display = 'block';
+            gameOverScreen.style.display = 'none';
+            arena = createMatrix(12, 20);
+            playerReset();
+            update();
+        });
+
+        retryButton.addEventListener('click', () => {
+            location.reload();
+        });
+
+        document.getElementById('left').addEventListener('click', () => playerMove(-1));
+        document.getElementById('right').addEventListener('click', () => playerMove(1));
+        document.getElementById('rotate').addEventListener('click', playerRotate);
+        document.getElementById('down').addEventListener('click', () => playerDrop());
+
+        let arena = createMatrix(12, 20);
+        let player = { pos: { x: 0, y: 0 }, matrix: null };
+        let dropCounter = 0, lastTime = 0;
+    </script>
+</body>
+
+</html>
